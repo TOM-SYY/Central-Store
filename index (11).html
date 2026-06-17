@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Central Store — Amber Resort</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #FAF6EE; font-family: ui-sans-serif, system-ui, "Segoe UI", "Noto Sans Thai", sans-serif; -webkit-tap-highlight-color: transparent; }
+  input, select, button { font-family: inherit; }
+  input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .spin { width: 26px; height: 26px; border: 3px solid #E8E0D0; border-top-color: #B5740F; border-radius: 50%; animation: r .8s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+</style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+const THB = n => "฿" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const VAT_RATE = 0.07;
+const tierRole = (total, th) => total <= th ? "อัตโนมัติ" : total <= 50000 ? "หัวหน้าแผนกบัญชี" : "ผู้จัดการทั่วไป (GM)";
+const poTotals = lines => {
+  const sub = round2(lines.reduce((s, l) => s + l.qty * l.unitPrice, 0));
+  const vat = round2(sub * VAT_RATE);
+  return { sub, vat, total: round2(sub + vat) };
+};
+
+const C = { ink: "#2a261f", cream: "#FAF6EE", card: "#fff", line: "#E8E0D0", amber: "#B5740F", amberSoft: "#FBEEDA", green: "#3B6D11", greenSoft: "#EDF4DF", blue: "#185FA5", blueSoft: "#E6F1FB", red: "#A32D2D", redSoft: "#FCEBEB", mut: "#8a8472" };
+
+const SVGP = {
+  home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  cart: '<circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/><path d="M3 4h2l2 12h11l2-8H6"/>',
+  issue: '<path d="M4 7l8-4 8 4v8l-8 4-8-4z"/><path d="M9 12h6"/>',
+  boxes: '<rect x="3" y="8" width="8" height="9" rx="1"/><rect x="13" y="8" width="8" height="9" rx="1"/>',
+  scroll: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+  check: '<path d="M5 12l4 4 10-10"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  alert: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 16.5v.5"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  receipt: '<path d="M5 3h14v18l-3-2-3 2-3-2-2 2z"/><path d="M8 8h8M8 12h8"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'
+};
+const Icon = ({ name, size = 20, color = "currentColor" }) =>
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: SVGP[name] }} />;
+
+const Card = ({ children, style }) => <div style={{ background: C.card, border: "1px solid " + C.line, borderRadius: 14, padding: 16, ...style }}>{children}</div>;
+const Badge = ({ children, tone = "mut" }) => {
+  const map = { green: [C.greenSoft, C.green], amber: [C.amberSoft, C.amber], blue: [C.blueSoft, C.blue], red: [C.redSoft, C.red], mut: ["#F0ECE2", C.mut] };
+  const [bg, fg] = map[tone];
+  return <span style={{ background: bg, color: fg, fontSize: 12, fontWeight: 500, padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }}>{children}</span>;
+};
+const Btn = ({ children, onClick, tone = "amber", disabled, style }) => {
+  const map = { amber: [C.amber, "#fff"], green: [C.green, "#fff"], ghost: ["transparent", C.ink], red: [C.redSoft, C.red] };
+  const [bg, fg] = map[tone];
+  return <button onClick={onClick} disabled={disabled} style={{ background: disabled ? "#D9D3C5" : bg, color: disabled ? "#fff" : fg, border: tone === "ghost" ? "1px solid " + C.line : "none", borderRadius: 10, padding: "9px 14px", fontSize: 14, fontWeight: 500, cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6, ...style }}>{children}</button>;
+};
+const selStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.line, fontSize: 14, background: "#fff", color: C.ink, boxSizing: "border-box" };
+const Label = ({ children }) => <div style={{ fontSize: 12, color: C.mut, marginBottom: 6, marginTop: 12 }}>{children}</div>;
+
+function App() {
+  const [apiUrl, setApiUrl] = useState(localStorage.getItem("cs_api") || "");
+  const [urlInput, setUrlInput] = useState(localStorage.getItem("cs_api") || "");
+  const [world, setWorld] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [tab, setTab] = useState("home");
+  const [toast, setToast] = useState(null);
+  const [showCfg, setShowCfg] = useState(false);
+
+  const [poSupplier, setPoSupplier] = useState("S1");
+  const [poDept, setPoDept] = useState("KIT");
+  const [poCart, setPoCart] = useState([]);
+  const [poPick, setPoPick] = useState("it1");
+  const [poQty, setPoQty] = useState(1);
+  const [poPrice, setPoPrice] = useState(94.5);
+  const [issDept, setIssDept] = useState("KIT");
+  const [issCart, setIssCart] = useState([]);
+  const [issPick, setIssPick] = useState("it1");
+  const [issQty, setIssQty] = useState(1);
+  const [accView, setAccView] = useState("journal");
+  const [openEntry, setOpenEntry] = useState(null);
+  const [countVals, setCountVals] = useState({});
+  const [thInput, setThInput] = useState(5000);
+
+  const flash = m => { setToast(m); setTimeout(() => setToast(null), 3200); };
+  const itemById = id => world && world.items.find(i => i.id === id);
+
+  async function apiPost(body) {
+    const r = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body), redirect: "follow" });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+  async function load() {
+    if (!apiUrl) return;
+    setLoading(true); setErr(null);
+    try { const data = await apiPost({ action: "state" }); setWorld(data); setThInput(data.config.autoThreshold); }
+    catch (e) { setErr(e.message); }
+    setLoading(false);
+  }
+  async function call(body) {
+    setBusy(true);
+    try { const data = await apiPost(body); setWorld(data); }
+    catch (e) { flash("เชื่อมต่อไม่ได้: " + e.message); }
+    setBusy(false);
+  }
+  useEffect(() => { load(); }, [apiUrl]);
+
+  /* ---- config / connect screen ---- */
+  if (!apiUrl || showCfg) {
+    return (
+      <Shell>
+        <Card>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 6 }}>เชื่อมต่อ Google Apps Script</div>
+          <div style={{ fontSize: 13.5, color: C.mut, lineHeight: 1.6 }}>วาง Web app URL ที่ได้จากขั้นตอน Deploy (ลงท้ายด้วย /exec)</div>
+          <input value={urlInput} onChange={e => setUrlInput(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" style={{ ...selStyle, marginTop: 12 }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <Btn onClick={() => { const u = urlInput.trim(); if (!u) return; localStorage.setItem("cs_api", u); setApiUrl(u); setShowCfg(false); }} style={{ flex: 1, justifyContent: "center" }}>เชื่อมต่อ</Btn>
+            {showCfg && <Btn tone="ghost" onClick={() => setShowCfg(false)}>ยกเลิก</Btn>}
+          </div>
+          {apiUrl && <Btn tone="red" onClick={() => { call({ action: "reset" }); setShowCfg(false); flash("รีเซ็ตข้อมูลตัวอย่างแล้ว"); }} style={{ width: "100%", justifyContent: "center", marginTop: 18 }}>รีเซ็ตข้อมูลเป็นชุดตัวอย่าง</Btn>}
+        </Card>
+      </Shell>
+    );
+  }
+  if (loading || !world) return <Shell><Center>{err ? <div style={{ textAlign: "center" }}><div style={{ color: C.red, marginBottom: 10 }}>โหลดไม่สำเร็จ: {err}</div><Btn onClick={load}>ลองใหม่</Btn></div> : <div className="spin" />}</Center></Shell>;
+
+  /* ---- derived ---- */
+  const stock = world.items.filter(i => i.type === "stock");
+  const invValue = round2(stock.reduce((s, i) => s + i.onHand * i.avgCost, 0));
+  const allLines = world.journal.flatMap(e => e.lines);
+  const monthExp = round2(allLines.filter(l => l.account.startsWith("ค่าใช้จ่าย")).reduce((s, l) => s + l.debit, 0));
+  const vatInput = round2(allLines.filter(l => l.account === "ภาษีซื้อ (VAT ขอคืน)").reduce((s, l) => s + l.debit, 0));
+  const pending = world.pos.filter(p => p.status === "pending");
+  const low = stock.filter(i => i.onHand <= i.min);
+  const cc = world.departments.map(dp => ({ ...dp, total: round2(allLines.filter(l => l.dept === dp.id).reduce((s, l) => s + l.debit, 0)) }));
+  const threshold = world.config.autoThreshold;
+  const issuableStock = stock.filter(i => i.onHand > 0);
+  const poCartT = poTotals(poCart);
+  const issCost = round2(issCart.reduce((s, l) => s + l.qty * itemById(l.itemId).avgCost, 0));
+
+  /* ---- handlers ---- */
+  const addPoLine = () => {
+    const it = itemById(poPick); const price = parseFloat(poPrice) || it.avgCost || 0;
+    if (poQty <= 0 || price <= 0) return flash("กรอกจำนวนและราคาให้ถูกต้อง");
+    setPoCart([...poCart, { itemId: poPick, qty: Number(poQty), unitPrice: round2(price) }]); setPoQty(1);
+  };
+  const submitPoHandler = () => {
+    if (!poCart.length) return;
+    const hasDirect = poCart.some(l => itemById(l.itemId).type === "direct");
+    const t = poTotals(poCart);
+    call({ action: "submitPO", payload: { supplier: poSupplier, department: hasDirect ? poDept : null, date: "17 มิ.ย.", lines: poCart.map(l => ({ ...l })) } });
+    setPoCart([]);
+    flash(t.total <= threshold ? "อนุมัติอัตโนมัติ & รับเข้าคลังแล้ว ✓" : "ส่งขออนุมัติแล้ว → แท็บ ภาพรวม");
+    setTab(t.total <= threshold ? "store" : "home");
+  };
+  const addIssLine = () => {
+    const it = itemById(issPick); if (issQty <= 0) return;
+    const already = issCart.filter(l => l.itemId === issPick).reduce((s, l) => s + l.qty, 0);
+    if (Number(issQty) + already > it.onHand) return flash("คงเหลือไม่พอ — มี " + it.onHand + " " + it.unit);
+    setIssCart([...issCart, { itemId: issPick, qty: Number(issQty) }]); setIssQty(1);
+  };
+  const submitIssHandler = () => {
+    if (!issCart.length) return;
+    call({ action: "issue", payload: { department: issDept, date: "17 มิ.ย.", lines: issCart.map(l => ({ ...l })) } });
+    setIssCart([]); flash("เบิก & ตัดสต็อกแล้ว — log อัตโนมัติ ✓"); setTab("acc"); setAccView("cc");
+  };
+  const doCount = id => {
+    const v = countVals[id]; if (v === undefined || v === "") return;
+    if (Number(v) === itemById(id).onHand) return flash("ตรงกับระบบ — ไม่มีผลต่าง");
+    call({ action: "count", itemId: id, counted: Number(v) });
+    setCountVals({ ...countVals, [id]: "" }); flash("ปรับปรุงผลนับ & ลงบัญชีแล้ว ✓");
+  };
+
+  const NAV = [["home", "home", "ภาพรวม"], ["buy", "cart", "สั่งซื้อ"], ["issue", "issue", "เบิก"], ["store", "boxes", "คลัง"], ["acc", "scroll", "บัญชี"]];
+
+  return (
+    <Shell onGear={() => { setUrlInput(apiUrl); setShowCfg(true); }} busy={busy}>
+      {toast && <div style={{ position: "sticky", top: 0, zIndex: 9, margin: "10px 14px 0", background: C.green, color: "#fff", padding: "10px 14px", borderRadius: 10, fontSize: 13.5, fontWeight: 500 }}>{toast}</div>}
+      <div style={{ flex: 1, padding: "14px 14px 96px", overflow: "auto" }}>
+
+        {tab === "home" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Card style={{ padding: 14 }}><div style={{ fontSize: 12, color: C.mut }}>มูลค่าคลังกลาง (สินทรัพย์)</div><div style={{ fontSize: 22, fontWeight: 500, marginTop: 4 }}>{THB(invValue)}</div></Card>
+              <Card style={{ padding: 14 }}><div style={{ fontSize: 12, color: C.mut }}>ค่าใช้จ่ายเข้าแผนก</div><div style={{ fontSize: 22, fontWeight: 500, marginTop: 4 }}>{THB(monthExp)}</div></Card>
+              <Card style={{ padding: 14 }}><div style={{ fontSize: 12, color: C.mut }}>ภาษีซื้อสะสม</div><div style={{ fontSize: 18, fontWeight: 500, marginTop: 4 }}>{THB(vatInput)}</div></Card>
+              <Card style={{ padding: 14 }}><div style={{ fontSize: 12, color: C.mut }}>รออนุมัติ</div><div style={{ fontSize: 22, fontWeight: 500, marginTop: 4, color: pending.length ? C.amber : C.ink }}>{pending.length} รายการ</div></Card>
+            </div>
+
+            <Card>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>เกณฑ์อนุมัติอัตโนมัติ (ตั้งครั้งเดียว)</div>
+              <div style={{ fontSize: 13, color: C.mut, marginBottom: 10 }}>PO ไม่เกินวงเงินนี้ = ระบบอนุมัติเอง · เกินส่งหัวหน้าแผนกบัญชี · เกิน ฿50,000 ส่ง GM</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span>฿</span><input type="number" value={thInput} onChange={e => setThInput(Number(e.target.value) || 0)} style={{ ...selStyle, width: 130 }} />
+                <Btn tone="ghost" onClick={() => { call({ action: "setThreshold", value: thInput }); flash("บันทึกเกณฑ์ ฿" + thInput.toLocaleString()); }}>บันทึก</Btn>
+              </div>
+            </Card>
+
+            <div>
+              <div style={{ fontWeight: 500, margin: "4px 2px 8px" }}>คำขออนุมัติ — กดครั้งเดียวจบ</div>
+              {!pending.length && <Card><div style={{ color: C.mut, fontSize: 14, textAlign: "center", padding: "10px 0" }}>ไม่มีคำขอค้างอนุมัติ</div></Card>}
+              {pending.map(p => (
+                <Card key={p.no} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div><div style={{ fontWeight: 500 }}>{p.no}</div><div style={{ fontSize: 13, color: C.mut }}>{supName(world, p.supplier)}</div></div>
+                    <Badge tone="amber">{p.approverRole}</Badge>
+                  </div>
+                  <div style={{ borderTop: "1px dashed " + C.line, margin: "10px 0", paddingTop: 10, fontSize: 13 }}>
+                    {p.lines.map((l, i) => { const it = itemById(l.itemId); return <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", color: "#5a5547" }}><span>{it.name} × {l.qty}</span><span>{THB(l.qty * l.unitPrice)}</span></div>; })}
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, color: C.mut }}><span>VAT 7%</span><span>{THB(p.vat)}</span></div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontWeight: 500 }}><span>รวมจ่าย</span><span>{THB(p.total)}</span></div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn tone="green" disabled={busy} onClick={() => { call({ action: "approvePO", no: p.no, approver: "คุณ — หัวหน้าแผนกบัญชี" }); flash(p.no + " อนุมัติแล้ว → ของเข้าคลัง + VAT + บัญชี อัตโนมัติ ✓"); }} style={{ flex: 1, justifyContent: "center" }}><Icon name="check" size={16} color="#fff" /> อนุมัติ & รับเข้าคลัง</Btn>
+                    <Btn tone="red" disabled={busy} onClick={() => { call({ action: "rejectPO", no: p.no }); flash(p.no + " ปฏิเสธแล้ว"); }}><Icon name="x" size={16} color={C.red} /></Btn>
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            <Card>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 500, marginBottom: 8 }}><Icon name="alert" size={16} color={C.amber} /> ใกล้หมด / ต้องสั่ง</div>
+              {!low.length && <div style={{ color: C.mut, fontSize: 14 }}>สต็อกปกติทุกตัว</div>}
+              {low.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13.5, borderBottom: "1px solid #F2EEE3" }}><span>{i.name}</span><span style={{ color: C.red }}>เหลือ {i.onHand} {i.unit} (min {i.min})</span></div>)}
+            </Card>
+          </div>
+        )}
+
+        {tab === "buy" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Card>
+              <div style={{ fontWeight: 500 }}>สั่งซื้อจาก Supplier</div>
+              <div style={{ fontSize: 12.5, color: C.mut, marginTop: 2 }}>ของเข้าคลัง = สินทรัพย์ · ของสด = ตัดจ่ายตรงเข้าแผนก</div>
+              <Label>Supplier</Label>
+              <select value={poSupplier} onChange={e => setPoSupplier(e.target.value)} style={selStyle}>{world.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+              <Label>เพิ่มรายการ</Label>
+              <select value={poPick} onChange={e => { setPoPick(e.target.value); const it = itemById(e.target.value); setPoPrice(it.avgCost || ""); }} style={selStyle}>{world.items.map(i => <option key={i.id} value={i.id}>{i.code} · {i.name} {i.type === "direct" ? "(ของสด)" : ""}</option>)}</select>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: C.mut, marginBottom: 4 }}>จำนวน</div><input type="number" value={poQty} onChange={e => setPoQty(e.target.value)} style={selStyle} /></div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: C.mut, marginBottom: 4 }}>ราคา/หน่วย (ก่อน VAT)</div><input type="number" value={poPrice} onChange={e => setPoPrice(e.target.value)} style={selStyle} /></div>
+                <Btn onClick={addPoLine} style={{ alignSelf: "flex-end" }}><Icon name="plus" size={16} color="#fff" /></Btn>
+              </div>
+              {itemById(poPick).type === "direct" && <><Label>แผนกที่รับของสด (cost center)</Label><select value={poDept} onChange={e => setPoDept(e.target.value)} style={selStyle}>{world.departments.map(dp => <option key={dp.id} value={dp.id}>{dp.name}</option>)}</select></>}
+            </Card>
+            {poCart.length > 0 && (
+              <Card>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>ใบสั่งซื้อร่าง</div>
+                {poCart.map((l, i) => { const it = itemById(l.itemId); return <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #F2EEE3", fontSize: 14 }}><div><div>{it.name} {it.type === "direct" && <Badge tone="blue">ตัดจ่ายตรง</Badge>}</div><div style={{ fontSize: 12, color: C.mut }}>{l.qty} {it.unit} × {THB(l.unitPrice)}</div></div><div style={{ display: "flex", alignItems: "center", gap: 10 }}><span>{THB(l.qty * l.unitPrice)}</span><span onClick={() => setPoCart(poCart.filter((_, x) => x !== i))} style={{ cursor: "pointer" }}><Icon name="trash" size={15} color={C.red} /></span></div></div>; })}
+                <div style={{ marginTop: 10, fontSize: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: C.mut }}><span>ยอดก่อน VAT</span><span>{THB(poCartT.sub)}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: C.mut, marginTop: 3 }}><span>VAT 7% (ขอคืน)</span><span>{THB(poCartT.vat)}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 500, marginTop: 5 }}><span>รวมจ่าย Supplier</span><span>{THB(poCartT.total)}</span></div>
+                </div>
+                <div style={{ marginTop: 12, background: poCartT.total <= threshold ? C.greenSoft : C.amberSoft, color: poCartT.total <= threshold ? C.green : C.amber, padding: "9px 12px", borderRadius: 10, fontSize: 13, fontWeight: 500 }}>{poCartT.total <= threshold ? "✓ อนุมัติอัตโนมัติ (≤ " + THB(threshold) + ")" : "ต้องส่งอนุมัติ → " + tierRole(poCartT.total, threshold)}</div>
+                <Btn disabled={busy} onClick={submitPoHandler} style={{ width: "100%", justifyContent: "center", marginTop: 10 }}><Icon name="receipt" size={16} color="#fff" /> {poCartT.total <= threshold ? "ส่ง & รับเข้าคลัง" : "ส่งขออนุมัติ"}</Btn>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {tab === "issue" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Card>
+              <div style={{ fontWeight: 500 }}>เบิกของจากคลังกลาง</div>
+              <div style={{ fontSize: 12.5, color: C.mut, marginTop: 2 }}>ไม่ต้องอนุมัติ — log อัตโนมัติ + ตัดต้นทุน (ถัวเฉลี่ย) เข้า cost center</div>
+              <Label>แผนกที่เบิก (cost center)</Label>
+              <select value={issDept} onChange={e => setIssDept(e.target.value)} style={selStyle}>{world.departments.map(dp => <option key={dp.id} value={dp.id}>{dp.name}</option>)}</select>
+              <Label>เลือกของ</Label>
+              <select value={issPick} onChange={e => setIssPick(e.target.value)} style={selStyle}>{issuableStock.map(i => <option key={i.id} value={i.id}>{i.code} · {i.name} (เหลือ {i.onHand} {i.unit})</option>)}</select>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: C.mut, marginBottom: 4 }}>จำนวน (ต้นทุน ~ {THB(itemById(issPick) ? itemById(issPick).avgCost : 0)}/หน่วย)</div><input type="number" value={issQty} onChange={e => setIssQty(e.target.value)} style={selStyle} /></div>
+                <Btn onClick={addIssLine} style={{ alignSelf: "flex-end" }}><Icon name="plus" size={16} color="#fff" /></Btn>
+              </div>
+            </Card>
+            {issCart.length > 0 && (
+              <Card>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>ใบเบิก — {dName(world, issDept)}</div>
+                {issCart.map((l, i) => { const it = itemById(l.itemId); return <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #F2EEE3", fontSize: 14 }}><div><div>{it.name}</div><div style={{ fontSize: 12, color: C.mut }}>{l.qty} {it.unit} × {THB(it.avgCost)}</div></div><div style={{ display: "flex", alignItems: "center", gap: 10 }}><span>{THB(l.qty * it.avgCost)}</span><span onClick={() => setIssCart(issCart.filter((_, x) => x !== i))} style={{ cursor: "pointer" }}><Icon name="trash" size={15} color={C.red} /></span></div></div>; })}
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 500, marginTop: 10 }}><span>ต้นทุนเข้า {dName(world, issDept)}</span><span>{THB(issCost)}</span></div>
+                <Btn tone="green" disabled={busy} onClick={submitIssHandler} style={{ width: "100%", justifyContent: "center", marginTop: 10 }}><Icon name="check" size={16} color="#fff" /> บันทึก & ตัดสต็อกทันที</Btn>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {tab === "store" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}><div style={{ fontWeight: 500 }}>สินค้าคงเหลือ</div><Badge tone="green">รวม {THB(invValue)}</Badge></div>
+              {stock.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #F2EEE3" }}><div><div style={{ fontSize: 14 }}>{i.name}</div><div style={{ fontSize: 12, color: C.mut }}>{i.code} · ถัวเฉลี่ย {THB(i.avgCost)}/{i.unit}</div></div><div style={{ textAlign: "right" }}><div style={{ fontWeight: 500, color: i.onHand <= i.min ? C.red : C.ink }}>{i.onHand} {i.unit}</div><div style={{ fontSize: 12, color: C.mut }}>{THB(i.onHand * i.avgCost)}</div></div></div>)}
+              <div style={{ marginTop: 10, fontSize: 12.5, color: C.mut }}>ของสด (ตัดจ่ายตรง): {world.items.filter(i => i.type === "direct").map(i => i.name).join(", ")}</div>
+            </Card>
+            <Card>
+              <div style={{ fontWeight: 500, marginBottom: 2 }}>นับสต็อกสิ้นเดือน</div>
+              <div style={{ fontSize: 12.5, color: C.mut, marginBottom: 8 }}>กรอกยอดนับจริง → ระบบลงผลต่าง (variance) เข้าบัญชีให้</div>
+              {stock.map(i => {
+                const v = countVals[i.id];
+                const variance = v === undefined || v === "" ? null : round2(Number(v) - i.onHand);
+                return <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #F2EEE3" }}>
+                  <div style={{ flex: 1, fontSize: 13.5 }}>{i.name}<div style={{ fontSize: 11, color: C.mut }}>ระบบ {i.onHand} {i.unit}</div></div>
+                  <input type="number" placeholder="นับได้" value={v == null ? "" : v} onChange={e => setCountVals({ ...countVals, [i.id]: e.target.value })} style={{ ...selStyle, width: 78, padding: "7px 9px" }} />
+                  {variance !== null && variance !== 0 && <span style={{ fontSize: 12, color: variance < 0 ? C.red : C.green, width: 38 }}>{variance > 0 ? "+" : ""}{variance}</span>}
+                  <Btn tone="ghost" disabled={busy} onClick={() => doCount(i.id)} style={{ padding: "7px 10px" }}>ปรับ</Btn>
+                </div>;
+              })}
+            </Card>
+          </div>
+        )}
+
+        {tab === "acc" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 6, background: "#F0ECE2", padding: 4, borderRadius: 12 }}>
+              {[["journal", "สมุดรายวัน"], ["cc", "ต้นทุนตามแผนก"], ["audit", "Audit trail"]].map(([k, lab]) => <button key={k} onClick={() => setAccView(k)} style={{ flex: 1, padding: "8px 4px", border: "none", borderRadius: 9, fontSize: 13, fontWeight: 500, cursor: "pointer", background: accView === k ? "#fff" : "transparent", color: accView === k ? C.ink : C.mut }}>{lab}</button>)}
+            </div>
+            {accView === "journal" && (
+              <Card>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>สมุดรายวันทั่วไป</div>
+                {[...world.journal].reverse().map(e => (
+                  <div key={e.id} style={{ borderBottom: "1px solid #F2EEE3", padding: "8px 0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOpenEntry(openEntry === e.id ? null : e.id)}>
+                      <div><div style={{ fontSize: 13.5 }}>{e.desc}</div><div style={{ fontSize: 12, color: C.mut }}>{e.date} · {e.ref}</div></div>
+                      <span style={{ transform: openEntry === e.id ? "rotate(90deg)" : "none", transition: "transform .15s" }}><Icon name="chev" size={16} color={C.mut} /></span>
+                    </div>
+                    {openEntry === e.id && <div style={{ marginTop: 8, background: "#FAF6EE", borderRadius: 8, padding: "8px 10px", fontSize: 12.5 }}>{e.lines.map((l, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", paddingLeft: l.credit > 0 ? 16 : 0 }}><span style={{ color: l.credit > 0 ? C.mut : C.ink }}>{l.account}{l.sub ? " · " + l.sub : ""}</span><span>{l.debit > 0 ? "Dr " + THB(l.debit) : "Cr " + THB(l.credit)}</span></div>)}</div>}
+                  </div>
+                ))}
+              </Card>
+            )}
+            {accView === "cc" && (
+              <Card>
+                <div style={{ fontWeight: 500, marginBottom: 10 }}>ต้นทุน/ค่าใช้จ่ายตามแผนก (cost center)</div>
+                {cc.map(dp => { const max = Math.max(...cc.map(x => x.total), 1); return <div key={dp.id} style={{ marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 4 }}><span>{dp.name}</span><span style={{ fontWeight: 500 }}>{THB(dp.total)}</span></div><div style={{ height: 8, background: "#F0ECE2", borderRadius: 6 }}><div style={{ height: 8, width: (dp.total / max) * 100 + "%", background: C.amber, borderRadius: 6 }} /></div></div>; })}
+                <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid " + C.line, paddingTop: 10, marginTop: 4, fontWeight: 500 }}><span>รวมค่าใช้จ่ายงวดนี้</span><span>{THB(monthExp)}</span></div>
+              </Card>
+            )}
+            {accView === "audit" && (
+              <Card>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>Audit trail (แทนลายเซ็นกระดาษ)</div>
+                {world.auditLog.map((a, i) => <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: "1px solid #F2EEE3" }}><div style={{ width: 8, height: 8, borderRadius: 8, background: C.amber, marginTop: 6, flexShrink: 0 }} /><div style={{ fontSize: 13 }}><div>{a.action}</div><div style={{ fontSize: 11.5, color: C.mut }}>{a.t} · {a.who}</div></div></div>)}
+              </Card>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div style={{ position: "sticky", bottom: 0, background: "#fff", borderTop: "1px solid " + C.line, display: "flex" }}>
+        {NAV.map(([id, ic, label]) => {
+          const active = tab === id; const badge = id === "home" && pending.length;
+          return <button key={id} onClick={() => setTab(id)} style={{ flex: 1, background: "none", border: "none", padding: "9px 0 11px", cursor: "pointer", color: active ? C.amber : C.mut, position: "relative" }}><Icon name={ic} size={21} color={active ? C.amber : C.mut} /><div style={{ fontSize: 11, marginTop: 2, fontWeight: active ? 500 : 400 }}>{label}</div>{badge ? <span style={{ position: "absolute", top: 5, right: "50%", marginRight: -22, background: C.red, color: "#fff", fontSize: 10, borderRadius: 8, padding: "0 5px", lineHeight: "15px" }}>{badge}</span> : null}</button>;
+        })}
+      </div>
+    </Shell>
+  );
+}
+
+function supName(w, id) { const s = w.suppliers.find(x => x.id === id); return s ? s.name : id; }
+function dName(w, id) { const d = w.departments.find(x => x.id === id); return d ? d.name : id; }
+
+function Shell({ children, onGear, busy }) {
+  return (
+    <div style={{ background: C.cream, minHeight: "100vh", color: C.ink, maxWidth: 540, margin: "0 auto", display: "flex", flexDirection: "column" }}>
+      <div style={{ background: "#26231d", color: "#fff", padding: "16px 18px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div><div style={{ fontSize: 11, letterSpacing: 1.5, color: "#C9A86A" }}>AMBER RESORT · KOH YAO NOI</div><div style={{ fontSize: 19, fontWeight: 500 }}>Central Store</div></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>{busy && <div className="spin" style={{ width: 18, height: 18, borderWidth: 2 }} />}{onGear && <span onClick={onGear} style={{ cursor: "pointer", opacity: .8 }}><Icon name="gear" size={20} color="#fff" /></span>}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+function Center({ children }) { return <div style={{ minHeight: "70vh", display: "flex", alignItems: "center", justifyContent: "center" }}>{children}</div>; }
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
