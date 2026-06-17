@@ -65,9 +65,11 @@ const Btn = ({ children, onClick, tone = "amber", disabled, style }) => {
 const selStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.line, fontSize: 14, background: "#fff", color: C.ink, boxSizing: "border-box" };
 const Label = ({ children }) => <div style={{ fontSize: 12, color: C.mut, marginBottom: 6, marginTop: 12 }}>{children}</div>;
 
+const DEFAULT_API = "https://script.google.com/macros/s/AKfycbyjhL4GHpNaKWitKbvOT5ineDtAzPjDJTkRgjzEFW92CCpHOtT73qPVIXO5GWWa-xYc/exec";
+
 function App() {
-  const [apiUrl, setApiUrl] = useState(localStorage.getItem("cs_api") || "");
-  const [urlInput, setUrlInput] = useState(localStorage.getItem("cs_api") || "");
+  const [apiUrl, setApiUrl] = useState(localStorage.getItem("cs_api") || DEFAULT_API);
+  const [urlInput, setUrlInput] = useState(localStorage.getItem("cs_api") || DEFAULT_API);
   const [world, setWorld] = useState(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
