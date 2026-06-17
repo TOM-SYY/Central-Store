@@ -212,6 +212,7 @@ function App() {
   const [accView, setAccView] = useState("journal");
   const [openEntry, setOpenEntry] = useState(null);
   const [countVals, setCountVals] = useState({});
+  const [recvVals, setRecvVals] = useState({});
   const [thInput, setThInput] = useState(5000);
   const flash = m => {
     setToast(m);
@@ -341,6 +342,7 @@ function App() {
   const monthExp = round2(allLines.filter(l => l.account.startsWith("ค่าใช้จ่าย")).reduce((s, l) => s + l.debit, 0));
   const vatInput = round2(allLines.filter(l => l.account === "ภาษีซื้อ (VAT ขอคืน)").reduce((s, l) => s + l.debit, 0));
   const pending = world.pos.filter(p => p.status === "pending");
+  const toReceive = world.pos.filter(p => p.status === "approved" || p.status === "partial");
   const low = stock.filter(i => i.onHand <= i.min);
   const cc = world.departments.map(dp => ({
     ...dp,
@@ -379,8 +381,33 @@ function App() {
       }
     });
     setPoCart([]);
-    flash(t.total <= threshold ? "อนุมัติอัตโนมัติ & รับเข้าคลังแล้ว ✓" : "ส่งขออนุมัติแล้ว → แท็บ ภาพรวม");
-    setTab(t.total <= threshold ? "store" : "home");
+    flash(t.total <= threshold ? "อนุมัติอัตโนมัติแล้ว — ไปรับของที่หน้า ภาพรวม" : "ส่งขออนุมัติแล้ว → หน้า ภาพรวม");
+    setTab("home");
+  };
+  const receive = po => {
+    const lines = po.lines.map(l => {
+      const rem = round2(l.qty - (l.received || 0));
+      const raw = recvVals[po.no] && recvVals[po.no][l.itemId];
+      const q = raw === undefined || raw === "" ? rem : Number(raw);
+      return {
+        itemId: l.itemId,
+        qty: Math.min(Math.max(q, 0), rem)
+      };
+    }).filter(x => x.qty > 0);
+    if (!lines.length) return flash("ยังไม่ได้กรอกจำนวนที่รับ");
+    call({
+      action: "receivePO",
+      no: po.no,
+      lines
+    });
+    setRecvVals(prev => {
+      const c = {
+        ...prev
+      };
+      delete c[po.no];
+      return c;
+    });
+    flash("รับเข้าคลังแล้ว — อัปเดตสต็อก + VAT + บัญชี ✓");
   };
   const addIssLine = () => {
     const it = itemById(issPick);
@@ -638,7 +665,7 @@ function App() {
         no: p.no,
         approver: "คุณ — หัวหน้าแผนกบัญชี"
       });
-      flash(p.no + " อนุมัติแล้ว → ของเข้าคลัง + VAT + บัญชี อัตโนมัติ ✓");
+      flash(p.no + " อนุมัติแล้ว → เลื่อนลงไปรับของด้านล่าง ✓");
     },
     style: {
       flex: 1,
@@ -648,7 +675,7 @@ function App() {
     name: "check",
     size: 16,
     color: "#fff"
-  }), " อนุมัติ & รับเข้าคลัง"), /*#__PURE__*/React.createElement(Btn, {
+  }), " อนุมัติ (ครั้งเดียวจบ)"), /*#__PURE__*/React.createElement(Btn, {
     tone: "red",
     disabled: busy,
     onClick: () => {
@@ -662,7 +689,103 @@ function App() {
     name: "x",
     size: 16,
     color: C.red
-  })))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  })))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      margin: "4px 2px 8px"
+    }
+  }, "รอรับเข้าคลัง — รับบางส่วนได้"), !toReceive.length && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.mut,
+      fontSize: 14,
+      textAlign: "center",
+      padding: "10px 0"
+    }
+  }, "ไม่มีของรอรับ")), toReceive.map(p => /*#__PURE__*/React.createElement(Card, {
+    key: p.no,
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500
+    }
+  }, p.no), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.mut
+    }
+  }, supName(world, p.supplier))), p.status === "partial" ? /*#__PURE__*/React.createElement(Badge, {
+    tone: "amber"
+  }, "รับบางส่วน") : /*#__PURE__*/React.createElement(Badge, {
+    tone: "blue"
+  }, "อนุมัติแล้ว · รอรับ")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: "1px dashed " + C.line,
+      margin: "10px 0",
+      paddingTop: 8
+    }
+  }, p.lines.map((l, i) => {
+    const it = itemById(l.itemId);
+    const rem = round2(l.qty - (l.received || 0));
+    const raw = recvVals[p.no] && recvVals[p.no][l.itemId];
+    return /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "5px 0",
+        borderBottom: "1px solid #F2EEE3"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        fontSize: 13.5
+      }
+    }, it.name, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.mut
+      }
+    }, "สั่ง ", l.qty, " · รับแล้ว ", l.received || 0, " · เหลือ ", rem, " ", it.unit)), rem > 0 ? /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: raw === undefined ? rem : raw,
+      max: rem,
+      onChange: e => setRecvVals(prev => ({
+        ...prev,
+        [p.no]: {
+          ...(prev[p.no] || {}),
+          [l.itemId]: e.target.value
+        }
+      })),
+      style: {
+        ...selStyle,
+        width: 70,
+        padding: "7px 9px"
+      }
+    }) : /*#__PURE__*/React.createElement(Badge, {
+      tone: "green"
+    }, "ครบ"));
+  })), /*#__PURE__*/React.createElement(Btn, {
+    tone: "green",
+    disabled: busy,
+    onClick: () => receive(p),
+    style: {
+      width: "100%",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "boxes",
+    size: 16,
+    color: "#fff"
+  }), " บันทึกรับเข้าคลัง (GRN)")))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -865,7 +988,7 @@ function App() {
     name: "receipt",
     size: 16,
     color: "#fff"
-  }), " ", poCartT.total <= threshold ? "ส่ง & รับเข้าคลัง" : "ส่งขออนุมัติ"))), tab === "issue" && /*#__PURE__*/React.createElement("div", {
+  }), " ", poCartT.total <= threshold ? "ส่ง & อนุมัติอัตโนมัติ" : "ส่งขออนุมัติ"))), tab === "issue" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -1272,7 +1395,7 @@ function App() {
     }
   }, NAV.map(([id, ic, label]) => {
     const active = tab === id;
-    const badge = id === "home" && pending.length;
+    const badge = id === "home" && pending.length + toReceive.length;
     return /*#__PURE__*/React.createElement("button", {
       key: id,
       onClick: () => setTab(id),
