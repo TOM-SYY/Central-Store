@@ -213,6 +213,9 @@ function App() {
   const [openEntry, setOpenEntry] = useState(null);
   const [countVals, setCountVals] = useState({});
   const [recvVals, setRecvVals] = useState({});
+  const [invVals, setInvVals] = useState({});
+  const [invNoVals, setInvNoVals] = useState({});
+  const [invVatVals, setInvVatVals] = useState({});
   const [thInput, setThInput] = useState(5000);
   const flash = m => {
     setToast(m);
@@ -343,6 +346,8 @@ function App() {
   const vatInput = round2(allLines.filter(l => l.account === "ภาษีซื้อ (VAT ขอคืน)").reduce((s, l) => s + l.debit, 0));
   const pending = world.pos.filter(p => p.status === "pending");
   const toReceive = world.pos.filter(p => p.status === "approved" || p.status === "partial");
+  const toInvoice = world.pos.filter(p => p.lines.some(l => (l.received || 0) > (l.invoiced || 0)));
+  const grniTotal = round2(world.pos.reduce((s, p) => s + p.lines.reduce((a, l) => a + ((l.received || 0) - (l.invoiced || 0)) * l.unitPrice, 0), 0));
   const low = stock.filter(i => i.onHand <= i.min);
   const cc = world.departments.map(dp => ({
     ...dp,
@@ -407,7 +412,58 @@ function App() {
       delete c[po.no];
       return c;
     });
-    flash("รับเข้าคลังแล้ว — อัปเดตสต็อก + VAT + บัญชี ✓");
+    flash("รับเข้าคลังแล้ว — อัปเดตสต็อก (Dr คลัง / Cr GR/NI) ✓");
+  };
+  const invAmt = po => round2(po.lines.reduce((s, l) => {
+    const avail = round2((l.received || 0) - (l.invoiced || 0));
+    const raw = invVals[po.no] && invVals[po.no][l.itemId];
+    const q = raw === undefined || raw === "" ? avail : Math.min(Math.max(Number(raw), 0), avail);
+    return s + q * l.unitPrice;
+  }, 0));
+  const invoice = po => {
+    const lines = po.lines.map(l => {
+      const avail = round2((l.received || 0) - (l.invoiced || 0));
+      const raw = invVals[po.no] && invVals[po.no][l.itemId];
+      const q = raw === undefined || raw === "" ? avail : Number(raw);
+      return {
+        itemId: l.itemId,
+        qty: Math.min(Math.max(q, 0), avail)
+      };
+    }).filter(x => x.qty > 0);
+    if (!lines.length) return flash("ยังไม่ได้กรอกจำนวนที่วางบิล");
+    const invNo = (invNoVals[po.no] || "").trim();
+    if (!invNo) return flash("กรอกเลขที่ใบกำกับภาษีก่อน");
+    const vatRaw = invVatVals[po.no];
+    const vat = vatRaw === undefined || vatRaw === "" ? round2(invAmt(po) * 0.07) : Number(vatRaw);
+    call({
+      action: "invoicePO",
+      no: po.no,
+      supplierInvNo: invNo,
+      lines,
+      vat
+    });
+    setInvVals(p => {
+      const c = {
+        ...p
+      };
+      delete c[po.no];
+      return c;
+    });
+    setInvNoVals(p => {
+      const c = {
+        ...p
+      };
+      delete c[po.no];
+      return c;
+    });
+    setInvVatVals(p => {
+      const c = {
+        ...p
+      };
+      delete c[po.no];
+      return c;
+    });
+    flash("บันทึกใบกำกับแล้ว — Dr GR/NI + VAT / Cr เจ้าหนี้ ✓");
   };
   const addIssLine = () => {
     const it = itemById(issPick);
@@ -785,7 +841,169 @@ function App() {
     name: "boxes",
     size: 16,
     color: "#fff"
-  }), " บันทึกรับเข้าคลัง (GRN)")))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }), " บันทึกรับเข้าคลัง (GRN)")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      margin: "4px 2px 8px"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 500
+    }
+  }, "รอวางบิล / ใบกำกับ (VAT)"), grniTotal > 0 && /*#__PURE__*/React.createElement(Badge, {
+    tone: "amber"
+  }, "GR/NI ฿", grniTotal.toLocaleString("en-US", {
+    minimumFractionDigits: 2
+  }))), !toInvoice.length && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.mut,
+      fontSize: 14,
+      textAlign: "center",
+      padding: "10px 0"
+    }
+  }, "ไม่มีของรอวางบิล")), toInvoice.map(p => {
+    const sub = invAmt(p);
+    const vat = invVatVals[p.no] === undefined || invVatVals[p.no] === "" ? round2(sub * 0.07) : Number(invVatVals[p.no]);
+    return /*#__PURE__*/React.createElement(Card, {
+      key: p.no,
+      style: {
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 500
+      }
+    }, p.no), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.mut
+      }
+    }, supName(world, p.supplier))), /*#__PURE__*/React.createElement(Badge, {
+      tone: "blue"
+    }, "รับแล้ว รอวางบิล")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        borderTop: "1px dashed " + C.line,
+        margin: "10px 0",
+        paddingTop: 8
+      }
+    }, p.lines.map((l, i) => {
+      const it = itemById(l.itemId);
+      const avail = round2((l.received || 0) - (l.invoiced || 0));
+      const raw = invVals[p.no] && invVals[p.no][l.itemId];
+      return /*#__PURE__*/React.createElement("div", {
+        key: i,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "5px 0",
+          borderBottom: "1px solid #F2EEE3"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          fontSize: 13.5
+        }
+      }, it.name, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11.5,
+          color: C.mut
+        }
+      }, "รับแล้ว ", l.received || 0, " · วางบิลแล้ว ", l.invoiced || 0, " · รอบิล ", avail, " ", it.unit)), avail > 0 ? /*#__PURE__*/React.createElement("input", {
+        type: "number",
+        value: raw === undefined ? avail : raw,
+        max: avail,
+        onChange: e => setInvVals(prev => ({
+          ...prev,
+          [p.no]: {
+            ...(prev[p.no] || {}),
+            [l.itemId]: e.target.value
+          }
+        })),
+        style: {
+          ...selStyle,
+          width: 70,
+          padding: "7px 9px"
+        }
+      }) : /*#__PURE__*/React.createElement(Badge, {
+        tone: "green"
+      }, "ครบ"));
+    })), /*#__PURE__*/React.createElement(Label, null, "เลขที่ใบกำกับภาษี (จาก Supplier)"), /*#__PURE__*/React.createElement("input", {
+      value: invNoVals[p.no] || "",
+      onChange: e => setInvNoVals(prev => ({
+        ...prev,
+        [p.no]: e.target.value
+      })),
+      placeholder: "เช่น TI680617-001",
+      style: selStyle
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        marginTop: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        color: C.mut
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "มูลค่าก่อน VAT"), /*#__PURE__*/React.createElement("span", null, THB(sub))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        fontWeight: 500,
+        marginTop: 3
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "รวมตั้งหนี้"), /*#__PURE__*/React.createElement("span", null, THB(round2(sub + vat))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 110
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.mut,
+        marginBottom: 4
+      }
+    }, "VAT (แก้ตามบิลได้)"), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: invVatVals[p.no] === undefined ? round2(sub * 0.07) : invVatVals[p.no],
+      onChange: e => setInvVatVals(prev => ({
+        ...prev,
+        [p.no]: e.target.value
+      })),
+      style: {
+        ...selStyle,
+        padding: "7px 9px"
+      }
+    }))), /*#__PURE__*/React.createElement(Btn, {
+      disabled: busy,
+      onClick: () => invoice(p),
+      style: {
+        width: "100%",
+        justifyContent: "center",
+        marginTop: 10
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "receipt",
+      size: 16,
+      color: "#fff"
+    }), " บันทึกใบกำกับ & ตั้งหนี้"));
+  })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -1395,7 +1613,7 @@ function App() {
     }
   }, NAV.map(([id, ic, label]) => {
     const active = tab === id;
-    const badge = id === "home" && pending.length + toReceive.length;
+    const badge = id === "home" && pending.length + toReceive.length + toInvoice.length;
     return /*#__PURE__*/React.createElement("button", {
       key: id,
       onClick: () => setTab(id),
