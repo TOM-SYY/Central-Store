@@ -26,7 +26,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script>
   if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
-    window.__showErr('โหลดไลบรารี React จาก CDN ไม่สำเร็จ — ตรวจอินเทอร์เน็ต/ตัวบล็อกสคริปต์ แล้วรีเฟรช');
+    window.__showErr('โหลดไลบรารี React จาก CDN ไม่สำเร็จ — ตรวจอินเทอร์เน็ต/ตัวบล็อกสคริป์');
   }
 </script>
 <script>
@@ -42,7 +42,7 @@ const THB = n => "฿" + (n || 0).toLocaleString("en-US", {
   maximumFractionDigits: 2
 });
 const VAT_RATE = 0.07;
-const tierRole = (total, th) => total <= th ? "อัตโนมัติ" : total <= 50000 ? "หัวหน้าแผนกบัญชี" : "ผู้จัดการทั่วไป (GM)";
+const tierRole = (total, th) => total <= th ? "อัตโนมัติ" : total <= 50000 ? "หัวหน้าแผนกบัญชี" : "ผู้จัดการทั่วไป";
 const poTotals = lines => {
   const sub = round2(lines.reduce((s, l) => s + l.qty * l.unitPrice, 0));
   const vat = round2(sub * VAT_RATE);
@@ -80,7 +80,8 @@ const SVGP = {
   alert: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 16.5v.5"/>',
   chev: '<path d="M9 6l6 6-6 6"/>',
   receipt: '<path d="M5 3h14v18l-3-2-3 2-3-2-2 2z"/><path d="M8 8h8M8 12h8"/>',
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+  clipboard: '<path d="M9 2h6v2H9zM5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>'
 };
 const Icon = ({
   name,
@@ -188,6 +189,52 @@ const Label = ({
     marginTop: 12
   }
 }, children);
+const Shell = ({
+  children,
+  onGear,
+  busy
+}) => /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: "flex",
+    flexDirection: "column",
+    height: "100vh",
+    background: C.cream
+  }
+}, children, /*#__PURE__*/React.createElement("div", {
+  style: {
+    position: "fixed",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    display: "flex",
+    background: "#fff",
+    borderTop: "1px solid " + C.line,
+    zIndex: 10
+  }
+}, busy && /*#__PURE__*/React.createElement("div", {
+  style: {
+    position: "absolute",
+    inset: 0,
+    background: "rgba(0,0,0,0.1)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 20
+  }
+}, /*#__PURE__*/React.createElement("div", {
+  className: "spin"
+}))));
+const Center = ({
+  children
+}) => /*#__PURE__*/React.createElement("div", {
+  style: {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center"
+  }
+}, children);
+const supName = (world, sid) => world.suppliers.find(s => s.id === sid)?.name || sid;
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbyjhL4GHpNaKWitKbvOT5ineDtAzPjDJTkRgjzEFW92CCpHOtT73qPVIXO5GWWa-xYc/exec";
 function App() {
   const [apiUrl, setApiUrl] = useState(localStorage.getItem("cs_api") || DEFAULT_API);
@@ -217,6 +264,9 @@ function App() {
   const [invNoVals, setInvNoVals] = useState({});
   const [invVatVals, setInvVatVals] = useState({});
   const [thInput, setThInput] = useState(5000);
+  const [countFilter, setCountFilter] = useState("all");
+  const [countSearch, setCountSearch] = useState("");
+  const [countProgress, setCountProgress] = useState({});
   const flash = m => {
     setToast(m);
     setTimeout(() => setToast(null), 3200);
@@ -358,6 +408,21 @@ function App() {
   const poCartT = poTotals(poCart);
   const issCost = round2(issCart.reduce((s, l) => s + l.qty * itemById(l.itemId).avgCost, 0));
 
+  // Focused Count Tab
+  const countStockList = stock.filter(i => {
+    const val = countVals[i.id];
+    if (countFilter === "counted") return val !== undefined && val !== "";
+    if (countFilter === "uncounted") return val === undefined || val === "";
+    if (countFilter === "variance") return val !== undefined && val !== "" && Number(val) !== i.onHand;
+    return true;
+  }).filter(i => i.name.toLowerCase().includes(countSearch.toLowerCase()));
+
+  const countedCount = stock.filter(i => countVals[i.id] !== undefined && countVals[i.id] !== "").length;
+  const countedVariance = stock.filter(i => {
+    const v = countVals[i.id];
+    return v !== undefined && v !== "" && Number(v) !== i.onHand;
+  }).length;
+
   /* ---- handlers ---- */
   const addPoLine = () => {
     const it = itemById(poPick);
@@ -386,7 +451,7 @@ function App() {
       }
     });
     setPoCart([]);
-    flash(t.total <= threshold ? "อนุมัติอัตโนมัติแล้ว — ไปรับของที่หน้า ภาพรวม" : "ส่งขออนุมัติแล้ว → หน้า ภาพรวม");
+    flash(t.total <= threshold ? "อนุมัติอัตโนมัติแล้ว — ไปรับของที่หน้า ภาพรวม" : "ส่งขออนุมัติแล้ว");
     setTab("home");
   };
   const receive = po => {
@@ -508,7 +573,7 @@ function App() {
     });
     flash("ปรับปรุงผลนับ & ลงบัญชีแล้ว ✓");
   };
-  const NAV = [["home", "home", "ภาพรวม"], ["buy", "cart", "สั่งซื้อ"], ["issue", "issue", "เบิก"], ["store", "boxes", "คลัง"], ["acc", "scroll", "บัญชี"]];
+  const NAV = [["home", "home", "ภาพรวม"], ["buy", "cart", "สั่งซื้อ"], ["issue", "issue", "เบิก"], ["store", "boxes", "คลัง"], ["count", "clipboard", "นับสต็อก"], ["acc", "scroll", "บัญชี"]];
   return /*#__PURE__*/React.createElement(Shell, {
     onGear: () => {
       setUrlInput(apiUrl);
@@ -534,7 +599,181 @@ function App() {
       padding: "14px 14px 96px",
       overflow: "auto"
     }
-  }, tab === "home" && /*#__PURE__*/React.createElement("div", {
+  }, tab === "count" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 10,
+      padding: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.mut,
+      marginBottom: 4
+    }
+  }, "ยอดนับ"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 20,
+      fontWeight: 600,
+      color: C.green
+    }
+  }, countedCount, " / ", stock.length)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.mut,
+      marginBottom: 4
+    }
+  }, "พบผลต่าง"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 20,
+      fontWeight: 600,
+      color: countedVariance ? C.red : C.green
+    }
+  }, countedVariance)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.mut,
+      marginBottom: 4
+    }
+  }, "มูลค่านับได้"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 18,
+      fontWeight: 600
+    }
+  }, THB(round2(countStockList.filter(i => {
+    const v = countVals[i.id];
+    return v !== undefined && v !== "";
+  }).reduce((s, i) => s + Number(countVals[i.id]) * i.avgCost, 0)))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    placeholder: "ค้นหา...",
+    value: countSearch,
+    onChange: e => setCountSearch(e.target.value),
+    style: {
+      ...selStyle,
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement("select", {
+    value: countFilter,
+    onChange: e => setCountFilter(e.target.value),
+    style: {
+      ...selStyle,
+      width: 140
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "all"
+  }, "ทั้งหมด"), /*#__PURE__*/React.createElement("option", {
+    value: "uncounted"
+  }, "ยังไม่นับ"), /*#__PURE__*/React.createElement("option", {
+    value: "counted"
+  }, "นับแล้ว"), /*#__PURE__*/React.createElement("option", {
+    value: "variance"
+  }, "มีผลต่าง"))), countStockList.length === 0 ? /*#__PURE__*/React.createElement(Card, {
+    style: {
+      textAlign: "center",
+      padding: 40,
+      color: C.mut
+    }
+  }, "ไม่พบรายการ") : countStockList.map(item => {
+    const v = countVals[item.id];
+    const isCounted = v !== undefined && v !== "";
+    const variance = isCounted ? Number(v) - item.onHand : 0;
+    const hasVariance = isCounted && variance !== 0;
+    return /*#__PURE__*/React.createElement(Card, {
+      key: item.id,
+      style: {
+        marginBottom: 8,
+        borderLeft: hasVariance ? "4px solid " + C.red : "4px solid " + C.green,
+        paddingLeft: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 500,
+        fontSize: 15,
+        marginBottom: 2
+      }
+    }, item.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.mut,
+        display: "flex",
+        gap: 12
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "ระบบ: ", /*#__PURE__*/React.createElement("strong", null, item.onHand, " ", item.unit)), /*#__PURE__*/React.createElement("span", null, "ราคา: ", THB(item.avgCost))), isCounted && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        marginTop: 4,
+        color: hasVariance ? C.red : C.green,
+        fontWeight: 500
+      }
+    }, hasVariance ? "ผลต่าง: " + (variance > 0 ? "+" : "") + variance + " " + item.unit : "ถูกต้อง")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: v === undefined ? "" : v,
+      onChange: e => setCountVals({
+        ...countVals,
+        [item.id]: e.target.value
+      }),
+      placeholder: "นับได้",
+      style: {
+        width: 80,
+        padding: "8px 10px",
+        borderRadius: 8,
+        border: "1px solid " + C.line,
+        fontSize: 13,
+        textAlign: "center"
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
+      tone: isCounted ? "green" : "ghost",
+      onClick: () => doCount(item.id),
+      disabled: !isCounted || busy || (Number(v) === item.onHand),
+      style: {
+        padding: "7px 12px",
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "check",
+      size: 14,
+      color: isCounted ? "#fff" : C.ink
+    }), " บันทึก")))
+  })), tab === "home" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -618,7 +857,7 @@ function App() {
       color: C.mut,
       marginBottom: 10
     }
-  }, "PO ไม่เกินวงเงินนี้ = ระบบอนุมัติเอง · เกินส่งหัวหน้าแผนกบัญชี · เกิน ฿50,000 ส่ง GM"), /*#__PURE__*/React.createElement("div", {
+  }, "PO ไม่เกินวงเงินนี้ = ระบบอนุมัติเอง"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -641,680 +880,107 @@ function App() {
       });
       flash("บันทึกเกณฑ์ ฿" + thInput.toLocaleString());
     }
-  }, "บันทึก"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "บันทึก")))), tab === "buy" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 500,
-      margin: "4px 2px 8px"
-    }
-  }, "คำขออนุมัติ — กดครั้งเดียวจบ"), !pending.length && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.mut,
-      fontSize: 14,
-      textAlign: "center",
-      padding: "10px 0"
-    }
-  }, "ไม่มีคำขอค้างอนุมัติ")), pending.map(p => /*#__PURE__*/React.createElement(Card, {
-    key: p.no,
-    style: {
       marginBottom: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500
-    }
-  }, p.no), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: C.mut
-    }
-  }, supName(world, p.supplier))), /*#__PURE__*/React.createElement(Badge, {
-    tone: "amber"
-  }, p.approverRole)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      borderTop: "1px dashed " + C.line,
-      margin: "10px 0",
-      paddingTop: 10,
-      fontSize: 13
-    }
-  }, p.lines.map((l, i) => {
-    const it = itemById(l.itemId);
-    return /*#__PURE__*/React.createElement("div", {
-      key: i,
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        padding: "2px 0",
-        color: "#5a5547"
-      }
-    }, /*#__PURE__*/React.createElement("span", null, it.name, " × ", l.qty), /*#__PURE__*/React.createElement("span", null, THB(l.qty * l.unitPrice)));
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      marginTop: 6,
-      color: C.mut
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "VAT 7%"), /*#__PURE__*/React.createElement("span", null, THB(p.vat))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      marginTop: 4,
-      fontWeight: 500
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "รวมจ่าย"), /*#__PURE__*/React.createElement("span", null, THB(p.total)))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    tone: "green",
-    disabled: busy,
-    onClick: () => {
-      call({
-        action: "approvePO",
-        no: p.no,
-        approver: "คุณ — หัวหน้าแผนกบัญชี"
-      });
-      flash(p.no + " อนุมัติแล้ว → เลื่อนลงไปรับของด้านล่าง ✓");
-    },
-    style: {
-      flex: 1,
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "check",
-    size: 16,
-    color: "#fff"
-  }), " อนุมัติ (ครั้งเดียวจบ)"), /*#__PURE__*/React.createElement(Btn, {
-    tone: "red",
-    disabled: busy,
-    onClick: () => {
-      call({
-        action: "rejectPO",
-        no: p.no
-      });
-      flash(p.no + " ปฏิเสธแล้ว");
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "x",
-    size: 16,
-    color: C.red
-  })))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500,
-      margin: "4px 2px 8px"
-    }
-  }, "รอรับเข้าคลัง — รับบางส่วนได้"), !toReceive.length && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.mut,
-      fontSize: 14,
-      textAlign: "center",
-      padding: "10px 0"
-    }
-  }, "ไม่มีของรอรับ")), toReceive.map(p => /*#__PURE__*/React.createElement(Card, {
-    key: p.no,
-    style: {
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500
-    }
-  }, p.no), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: C.mut
-    }
-  }, supName(world, p.supplier))), p.status === "partial" ? /*#__PURE__*/React.createElement(Badge, {
-    tone: "amber"
-  }, "รับบางส่วน") : /*#__PURE__*/React.createElement(Badge, {
-    tone: "blue"
-  }, "อนุมัติแล้ว · รอรับ")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      borderTop: "1px dashed " + C.line,
-      margin: "10px 0",
-      paddingTop: 8
-    }
-  }, p.lines.map((l, i) => {
-    const it = itemById(l.itemId);
-    const rem = round2(l.qty - (l.received || 0));
-    const raw = recvVals[p.no] && recvVals[p.no][l.itemId];
-    return /*#__PURE__*/React.createElement("div", {
-      key: i,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "5px 0",
-        borderBottom: "1px solid #F2EEE3"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        fontSize: 13.5
-      }
-    }, it.name, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11.5,
-        color: C.mut
-      }
-    }, "สั่ง ", l.qty, " · รับแล้ว ", l.received || 0, " · เหลือ ", rem, " ", it.unit)), rem > 0 ? /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: raw === undefined ? rem : raw,
-      max: rem,
-      onChange: e => setRecvVals(prev => ({
-        ...prev,
-        [p.no]: {
-          ...(prev[p.no] || {}),
-          [l.itemId]: e.target.value
-        }
-      })),
-      style: {
-        ...selStyle,
-        width: 70,
-        padding: "7px 9px"
-      }
-    }) : /*#__PURE__*/React.createElement(Badge, {
-      tone: "green"
-    }, "ครบ"));
-  })), /*#__PURE__*/React.createElement(Btn, {
-    tone: "green",
-    disabled: busy,
-    onClick: () => receive(p),
-    style: {
-      width: "100%",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "boxes",
-    size: 16,
-    color: "#fff"
-  }), " บันทึกรับเข้าคลัง (GRN)")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      margin: "4px 2px 8px"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 500
-    }
-  }, "รอวางบิล / ใบกำกับ (VAT)"), grniTotal > 0 && /*#__PURE__*/React.createElement(Badge, {
-    tone: "amber"
-  }, "GR/NI ฿", grniTotal.toLocaleString("en-US", {
-    minimumFractionDigits: 2
-  }))), !toInvoice.length && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.mut,
-      fontSize: 14,
-      textAlign: "center",
-      padding: "10px 0"
-    }
-  }, "ไม่มีของรอวางบิล")), toInvoice.map(p => {
-    const sub = invAmt(p);
-    const vat = invVatVals[p.no] === undefined || invVatVals[p.no] === "" ? round2(sub * 0.07) : Number(invVatVals[p.no]);
-    return /*#__PURE__*/React.createElement(Card, {
-      key: p.no,
-      style: {
-        marginBottom: 10
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center"
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontWeight: 500
-      }
-    }, p.no), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13,
-        color: C.mut
-      }
-    }, supName(world, p.supplier))), /*#__PURE__*/React.createElement(Badge, {
-      tone: "blue"
-    }, "รับแล้ว รอวางบิล")), /*#__PURE__*/React.createElement("div", {
-      style: {
-        borderTop: "1px dashed " + C.line,
-        margin: "10px 0",
-        paddingTop: 8
-      }
-    }, p.lines.map((l, i) => {
-      const it = itemById(l.itemId);
-      const avail = round2((l.received || 0) - (l.invoiced || 0));
-      const raw = invVals[p.no] && invVals[p.no][l.itemId];
-      return /*#__PURE__*/React.createElement("div", {
-        key: i,
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "5px 0",
-          borderBottom: "1px solid #F2EEE3"
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          flex: 1,
-          fontSize: 13.5
-        }
-      }, it.name, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 11.5,
-          color: C.mut
-        }
-      }, "รับแล้ว ", l.received || 0, " · วางบิลแล้ว ", l.invoiced || 0, " · รอบิล ", avail, " ", it.unit)), avail > 0 ? /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        value: raw === undefined ? avail : raw,
-        max: avail,
-        onChange: e => setInvVals(prev => ({
-          ...prev,
-          [p.no]: {
-            ...(prev[p.no] || {}),
-            [l.itemId]: e.target.value
-          }
-        })),
-        style: {
-          ...selStyle,
-          width: 70,
-          padding: "7px 9px"
-        }
-      }) : /*#__PURE__*/React.createElement(Badge, {
-        tone: "green"
-      }, "ครบ"));
-    })), /*#__PURE__*/React.createElement(Label, null, "เลขที่ใบกำกับภาษี (จาก Supplier)"), /*#__PURE__*/React.createElement("input", {
-      value: invNoVals[p.no] || "",
-      onChange: e => setInvNoVals(prev => ({
-        ...prev,
-        [p.no]: e.target.value
-      })),
-      placeholder: "เช่น TI680617-001",
-      style: selStyle
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        marginTop: 10
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        fontSize: 13
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        color: C.mut
-      }
-    }, /*#__PURE__*/React.createElement("span", null, "มูลค่าก่อน VAT"), /*#__PURE__*/React.createElement("span", null, THB(sub))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        fontWeight: 500,
-        marginTop: 3
-      }
-    }, /*#__PURE__*/React.createElement("span", null, "รวมตั้งหนี้"), /*#__PURE__*/React.createElement("span", null, THB(round2(sub + vat))))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 110
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: C.mut,
-        marginBottom: 4
-      }
-    }, "VAT (แก้ตามบิลได้)"), /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: invVatVals[p.no] === undefined ? round2(sub * 0.07) : invVatVals[p.no],
-      onChange: e => setInvVatVals(prev => ({
-        ...prev,
-        [p.no]: e.target.value
-      })),
-      style: {
-        ...selStyle,
-        padding: "7px 9px"
-      }
-    }))), /*#__PURE__*/React.createElement(Btn, {
-      disabled: busy,
-      onClick: () => invoice(p),
-      style: {
-        width: "100%",
-        justifyContent: "center",
-        marginTop: 10
-      }
-    }, /*#__PURE__*/React.createElement(Icon, {
-      name: "receipt",
-      size: 16,
-      color: "#fff"
-    }), " บันทึกใบกำกับ & ตั้งหนี้"));
-  })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      fontWeight: 500,
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "alert",
-    size: 16,
-    color: C.amber
-  }), " ใกล้หมด / ต้องสั่ง"), !low.length && /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.mut,
-      fontSize: 14
-    }
-  }, "สต็อกปกติทุกตัว"), low.map(i => /*#__PURE__*/React.createElement("div", {
-    key: i.id,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      padding: "5px 0",
-      fontSize: 13.5,
-      borderBottom: "1px solid #F2EEE3"
-    }
-  }, /*#__PURE__*/React.createElement("span", null, i.name), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.red
-    }
-  }, "เหลือ ", i.onHand, " ", i.unit, " (min ", i.min, ")"))))), tab === "buy" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 12
-    }
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500
-    }
-  }, "สั่งซื้อจาก Supplier"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: C.mut,
-      marginTop: 2
-    }
-  }, "ของเข้าคลัง = สินทรัพย์ · ของสด = ตัดจ่ายตรงเข้าแผนก"), /*#__PURE__*/React.createElement(Label, null, "Supplier"), /*#__PURE__*/React.createElement("select", {
+  }, "สั่งซื้อใหม่"), /*#__PURE__*/React.createElement(Label, null, "Supplier"), /*#__PURE__*/React.createElement("select", {
     value: poSupplier,
     onChange: e => setPoSupplier(e.target.value),
     style: selStyle
   }, world.suppliers.map(s => /*#__PURE__*/React.createElement("option", {
     key: s.id,
     value: s.id
-  }, s.name))), /*#__PURE__*/React.createElement(Label, null, "เพิ่มรายการ"), /*#__PURE__*/React.createElement("select", {
+  }, s.name))), /*#__PURE__*/React.createElement(Label, null, "สินค้า"), /*#__PURE__*/React.createElement("select", {
     value: poPick,
-    onChange: e => {
-      setPoPick(e.target.value);
-      const it = itemById(e.target.value);
-      setPoPrice(it.avgCost || "");
-    },
+    onChange: e => setPoPick(e.target.value),
     style: selStyle
-  }, world.items.map(i => /*#__PURE__*/React.createElement("option", {
-    key: i.id,
-    value: i.id
-  }, i.code, " · ", i.name, " ", i.type === "direct" ? "(ของสด)" : ""))), /*#__PURE__*/React.createElement("div", {
+  }, world.items.map(it => /*#__PURE__*/React.createElement("option", {
+    key: it.id,
+    value: it.id
+  }, it.name))), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      gap: 8,
-      marginTop: 8
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.mut,
-      marginBottom: 4
-    }
-  }, "จำนวน"), /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Label, null, "จำนวน"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     value: poQty,
     onChange: e => setPoQty(e.target.value),
     style: selStyle
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.mut,
-      marginBottom: 4
-    }
-  }, "ราคา/หน่วย (ก่อน VAT)"), /*#__PURE__*/React.createElement("input", {
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Label, null, "ราคา/หน่วย"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     value: poPrice,
     onChange: e => setPoPrice(e.target.value),
     style: selStyle
-  })), /*#__PURE__*/React.createElement(Btn, {
+  }))), /*#__PURE__*/React.createElement(Btn, {
     onClick: addPoLine,
-    style: {
-      alignSelf: "flex-end"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "plus",
-    size: 16,
-    color: "#fff"
-  }))), itemById(poPick).type === "direct" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Label, null, "แผนกที่รับของสด (cost center)"), /*#__PURE__*/React.createElement("select", {
-    value: poDept,
-    onChange: e => setPoDept(e.target.value),
-    style: selStyle
-  }, world.departments.map(dp => /*#__PURE__*/React.createElement("option", {
-    key: dp.id,
-    value: dp.id
-  }, dp.name))))), poCart.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500,
-      marginBottom: 8
-    }
-  }, "ใบสั่งซื้อร่าง"), poCart.map((l, i) => {
-    const it = itemById(l.itemId);
-    return /*#__PURE__*/React.createElement("div", {
-      key: i,
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "6px 0",
-        borderBottom: "1px solid #F2EEE3",
-        fontSize: 14
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", null, it.name, " ", it.type === "direct" && /*#__PURE__*/React.createElement(Badge, {
-      tone: "blue"
-    }, "ตัดจ่ายตรง")), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: C.mut
-      }
-    }, l.qty, " ", it.unit, " × ", THB(l.unitPrice))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 10
-      }
-    }, /*#__PURE__*/React.createElement("span", null, THB(l.qty * l.unitPrice)), /*#__PURE__*/React.createElement("span", {
-      onClick: () => setPoCart(poCart.filter((_, x) => x !== i)),
-      style: {
-        cursor: "pointer"
-      }
-    }, /*#__PURE__*/React.createElement(Icon, {
-      name: "trash",
-      size: 15,
-      color: C.red
-    }))));
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 10,
-      fontSize: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      color: C.mut
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "ยอดก่อน VAT"), /*#__PURE__*/React.createElement("span", null, THB(poCartT.sub))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      color: C.mut,
-      marginTop: 3
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "VAT 7% (ขอคืน)"), /*#__PURE__*/React.createElement("span", null, THB(poCartT.vat))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontWeight: 500,
-      marginTop: 5
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "รวมจ่าย Supplier"), /*#__PURE__*/React.createElement("span", null, THB(poCartT.total)))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12,
-      background: poCartT.total <= threshold ? C.greenSoft : C.amberSoft,
-      color: poCartT.total <= threshold ? C.green : C.amber,
-      padding: "9px 12px",
-      borderRadius: 10,
-      fontSize: 13,
-      fontWeight: 500
-    }
-  }, poCartT.total <= threshold ? "✓ อนุมัติอัตโนมัติ (≤ " + THB(threshold) + ")" : "ต้องส่งอนุมัติ → " + tierRole(poCartT.total, threshold)), /*#__PURE__*/React.createElement(Btn, {
-    disabled: busy,
-    onClick: submitPoHandler,
     style: {
       width: "100%",
       justifyContent: "center",
       marginTop: 10
     }
   }, /*#__PURE__*/React.createElement(Icon, {
-    name: "receipt",
-    size: 16,
-    color: "#fff"
-  }), " ", poCartT.total <= threshold ? "ส่ง & อนุมัติอัตโนมัติ" : "ส่งขออนุมัติ"))), tab === "issue" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 12
-    }
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500
-    }
-  }, "เบิกของจากคลังกลาง"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: C.mut,
-      marginTop: 2
-    }
-  }, "ไม่ต้องอนุมัติ — log อัตโนมัติ + ตัดต้นทุน (ถัวเฉลี่ย) เข้า cost center"), /*#__PURE__*/React.createElement(Label, null, "แผนกที่เบิก (cost center)"), /*#__PURE__*/React.createElement("select", {
-    value: issDept,
-    onChange: e => setIssDept(e.target.value),
-    style: selStyle
-  }, world.departments.map(dp => /*#__PURE__*/React.createElement("option", {
-    key: dp.id,
-    value: dp.id
-  }, dp.name))), /*#__PURE__*/React.createElement(Label, null, "เลือกของ"), /*#__PURE__*/React.createElement("select", {
-    value: issPick,
-    onChange: e => setIssPick(e.target.value),
-    style: selStyle
-  }, issuableStock.map(i => /*#__PURE__*/React.createElement("option", {
-    key: i.id,
-    value: i.id
-  }, i.code, " · ", i.name, " (เหลือ ", i.onHand, " ", i.unit, ")"))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginTop: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.mut,
-      marginBottom: 4
-    }
-  }, "จำนวน (ต้นทุน ~ ", THB(itemById(issPick) ? itemById(issPick).avgCost : 0), "/หน่วย)"), /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: issQty,
-    onChange: e => setIssQty(e.target.value),
-    style: selStyle
-  })), /*#__PURE__*/React.createElement(Btn, {
-    onClick: addIssLine,
-    style: {
-      alignSelf: "flex-end"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
     name: "plus",
-    size: 16,
-    color: "#fff"
-  })))), issCart.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+    size: 16
+  }), " เพิ่มลงการสั่ง")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 500,
-      marginBottom: 8
+      margin: "10px 2px 8px"
     }
-  }, "ใบเบิก — ", dName(world, issDept)), issCart.map((l, i) => {
-    const it = itemById(l.itemId);
+  }, "ใบสั่งซื้อ (" + poCart.length + " รายการ)"), poCart.length === 0 ? /*#__PURE__*/React.createElement(Card, {
+    style: {
+      textAlign: "center",
+      padding: 20,
+      color: C.mut
+    }
+  }, "ยังไม่มีรายการ") : /*#__PURE__*/React.createElement(Card, null, poCart.map((line, i) => {
+    const it = itemById(line.itemId);
     return /*#__PURE__*/React.createElement("div", {
       key: i,
       style: {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: "6px 0",
-        borderBottom: "1px solid #F2EEE3",
+        padding: "8px 0",
+        borderBottom: i < poCart.length - 1 ? "1px solid #f0ede5" : "none"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 500,
         fontSize: 14
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", null, it.name), /*#__PURE__*/React.createElement("div", {
+    }, it.name, " × ", line.qty), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: C.mut
       }
-    }, l.qty, " ", it.unit, " × ", THB(it.avgCost))), /*#__PURE__*/React.createElement("div", {
+    }, THB(line.qty * line.unitPrice))), /*#__PURE__*/React.createElement(Btn, {
+      tone: "red",
+      onClick: () => setPoCart(poCart.filter((_, j) => j !== i)),
       style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 10
-      }
-    }, /*#__PURE__*/React.createElement("span", null, THB(l.qty * it.avgCost)), /*#__PURE__*/React.createElement("span", {
-      onClick: () => setIssCart(issCart.filter((_, x) => x !== i)),
-      style: {
-        cursor: "pointer"
+        padding: "6px 10px"
       }
     }, /*#__PURE__*/React.createElement(Icon, {
       name: "trash",
-      size: 15,
+      size: 14,
       color: C.red
-    }))));
+    })));
   }), /*#__PURE__*/React.createElement("div", {
     style: {
+      borderTop: "1px solid #f0ede5",
+      marginTop: 8,
+      paddingTop: 8,
       display: "flex",
       justifyContent: "space-between",
-      fontWeight: 500,
-      marginTop: 10
+      fontWeight: 500
     }
-  }, /*#__PURE__*/React.createElement("span", null, "ต้นทุนเข้า ", dName(world, issDept)), /*#__PURE__*/React.createElement("span", null, THB(issCost))), /*#__PURE__*/React.createElement(Btn, {
+  }, /*#__PURE__*/React.createElement("span", null, "รวม"), /*#__PURE__*/React.createElement("span", null, THB(poCartT.total))), /*#__PURE__*/React.createElement(Btn, {
     tone: "green",
-    disabled: busy,
-    onClick: submitIssHandler,
+    onClick: submitPoHandler,
+    disabled: busy || !poCart.length,
     style: {
       width: "100%",
       justifyContent: "center",
@@ -1324,161 +990,158 @@ function App() {
     name: "check",
     size: 16,
     color: "#fff"
-  }), " บันทึก & ตัดสต็อกทันที"))), tab === "store" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 12
-    }
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500
-    }
-  }, "สินค้าคงเหลือ"), /*#__PURE__*/React.createElement(Badge, {
-    tone: "green"
-  }, "รวม ", THB(invValue))), stock.map(i => /*#__PURE__*/React.createElement("div", {
-    key: i.id,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      padding: "8px 0",
-      borderBottom: "1px solid #F2EEE3"
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 14
-    }
-  }, i.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.mut
-    }
-  }, i.code, " · ถัวเฉลี่ย ", THB(i.avgCost), "/", i.unit)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "right"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
+  }), " ส่งใบสั่งซื้อ")))), tab === "issue" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 500,
-      color: i.onHand <= i.min ? C.red : C.ink
+      marginBottom: 10
     }
-  }, i.onHand, " ", i.unit), /*#__PURE__*/React.createElement("div", {
+  }, "เบิกสินค้า"), /*#__PURE__*/React.createElement(Label, null, "แผนก"), /*#__PURE__*/React.createElement("select", {
+    value: issDept,
+    onChange: e => setIssDept(e.target.value),
+    style: selStyle
+  }, world.departments.map(d => /*#__PURE__*/React.createElement("option", {
+    key: d.id,
+    value: d.id
+  }, d.name))), /*#__PURE__*/React.createElement(Label, null, "สินค้า"), /*#__PURE__*/React.createElement("select", {
+    value: issPick,
+    onChange: e => setIssPick(e.target.value),
+    style: selStyle
+  }, issuableStock.map(it => /*#__PURE__*/React.createElement("option", {
+    key: it.id,
+    value: it.id
+  }, it.name, " (มี ", it.onHand, ")"))), /*#__PURE__*/React.createElement(Label, null, "จำนวน"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: issQty,
+    onChange: e => setIssQty(e.target.value),
+    style: selStyle
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addIssLine,
     style: {
-      fontSize: 12,
+      width: "100%",
+      justifyContent: "center",
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "plus",
+    size: 16
+  }), " เพิ่มลงการเบิก")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      margin: "10px 2px 8px"
+    }
+  }, "ใบเบิก (" + issCart.length + " รายการ) — ค่าใช้จ่าย " + THB(issCost)), issCart.length === 0 ? /*#__PURE__*/React.createElement(Card, {
+    style: {
+      textAlign: "center",
+      padding: 20,
       color: C.mut
     }
-  }, THB(i.onHand * i.avgCost))))), /*#__PURE__*/React.createElement("div", {
+  }, "ยังไม่มีรายการ") : /*#__PURE__*/React.createElement(Card, null, issCart.map((line, i) => {
+    const it = itemById(line.itemId);
+    return /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "8px 0",
+        borderBottom: i < issCart.length - 1 ? "1px solid #f0ede5" : "none"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 500,
+        fontSize: 14
+      }
+    }, it.name, " × ", line.qty), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.mut
+      }
+    }, THB(line.qty * it.avgCost))), /*#__PURE__*/React.createElement(Btn, {
+      tone: "red",
+      onClick: () => setIssCart(issCart.filter((_, j) => j !== i)),
+      style: {
+        padding: "6px 10px"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "trash",
+      size: 14,
+      color: C.red
+    })));
+  }), /*#__PURE__*/React.createElement(Btn, {
+    tone: "green",
+    onClick: submitIssHandler,
+    disabled: busy || !issCart.length,
     style: {
-      marginTop: 10,
-      fontSize: 12.5,
+      width: "100%",
+      justifyContent: "center",
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "check",
+    size: 16,
+    color: "#fff"
+  }), " บันทึกการเบิก")))), tab === "store" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      margin: "0 2px 8px"
+    }
+  }, "สต็อกคลังกลาง"), stock.length === 0 ? /*#__PURE__*/React.createElement(Card, {
+    style: {
+      textAlign: "center",
+      padding: 40,
       color: C.mut
     }
-  }, "ของสด (ตัดจ่ายตรง): ", world.items.filter(i => i.type === "direct").map(i => i.name).join(", "))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }, "ไม่มีสินค้า") : stock.map(it => /*#__PURE__*/React.createElement(Card, {
+    key: it.id,
+    style: {
+      marginBottom: 8,
+      borderLeft: it.onHand <= it.min ? "4px solid " + C.red : "4px solid " + C.green,
+      paddingLeft: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 500,
       marginBottom: 2
     }
-  }, "นับสต็อกสิ้นเดือน"), /*#__PURE__*/React.createElement("div", {
+  }, it.name), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: 12,
       color: C.mut,
-      marginBottom: 8
+      display: "flex",
+      gap: 16
     }
-  }, "กรอกยอดนับจริง → ระบบลงผลต่าง (variance) เข้าบัญชีให้"), stock.map(i => {
-    const v = countVals[i.id];
-    const variance = v === undefined || v === "" ? null : round2(Number(v) - i.onHand);
-    return /*#__PURE__*/React.createElement("div", {
-      key: i.id,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 0",
-        borderBottom: "1px solid #F2EEE3"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        fontSize: 13.5
-      }
-    }, i.name, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: C.mut
-      }
-    }, "ระบบ ", i.onHand, " ", i.unit)), /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      placeholder: "นับได้",
-      value: v == null ? "" : v,
-      onChange: e => setCountVals({
-        ...countVals,
-        [i.id]: e.target.value
-      }),
-      style: {
-        ...selStyle,
-        width: 78,
-        padding: "7px 9px"
-      }
-    }), variance !== null && variance !== 0 && /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 12,
-        color: variance < 0 ? C.red : C.green,
-        width: 38
-      }
-    }, variance > 0 ? "+" : "", variance), /*#__PURE__*/React.createElement(Btn, {
-      tone: "ghost",
-      disabled: busy,
-      onClick: () => doCount(i.id),
-      style: {
-        padding: "7px 10px"
-      }
-    }, "ปรับ"));
-  }))), tab === "acc" && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "คงเหลือ: ", /*#__PURE__*/React.createElement("strong", null, it.onHand, " ", it.unit)), /*#__PURE__*/React.createElement("span", null, "ต่ำสุด: ", it.min), /*#__PURE__*/React.createElement("span", null, "ราคา: ", THB(it.avgCost)))), it.onHand <= it.min && /*#__PURE__*/React.createElement(Badge, {
+    tone: "red"
+  }, "ต่ำกว่าเกณฑ์")))), tab === "acc" && /*#__PURE__*/React.createElement("div", null, accView === "journal" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      flexDirection: "column",
-      gap: 12
+      gap: 8,
+      marginBottom: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      background: "#F0ECE2",
-      padding: 4,
-      borderRadius: 12
-    }
-  }, [["journal", "สมุดรายวัน"], ["cc", "ต้นทุนตามแผนก"], ["audit", "Audit trail"]].map(([k, lab]) => /*#__PURE__*/React.createElement("button", {
-    key: k,
-    onClick: () => setAccView(k),
+  }, /*#__PURE__*/React.createElement(Btn, {
+    tone: accView === "journal" ? "amber" : "ghost",
+    onClick: () => setAccView("journal"),
     style: {
       flex: 1,
-      padding: "8px 4px",
-      border: "none",
-      borderRadius: 9,
-      fontSize: 13,
-      fontWeight: 500,
-      cursor: "pointer",
-      background: accView === k ? "#fff" : "transparent",
-      color: accView === k ? C.ink : C.mut
+      justifyContent: "center"
     }
-  }, lab))), accView === "journal" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }, "Journal"), /*#__PURE__*/React.createElement(Btn, {
+    tone: accView === "cc" ? "amber" : "ghost",
+    onClick: () => setAccView("cc"),
     style: {
-      fontWeight: 500,
-      marginBottom: 8
+      flex: 1,
+      justifyContent: "center"
     }
-  }, "สมุดรายวันทั่วไป"), [...world.journal].reverse().map(e => /*#__PURE__*/React.createElement("div", {
-    key: e.id,
+  }, "Cost Center")), world.journal.map((entry, i) => /*#__PURE__*/React.createElement(Card, {
+    key: i,
     style: {
-      borderBottom: "1px solid #F2EEE3",
-      padding: "8px 0"
+      marginBottom: 10
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1487,254 +1150,117 @@ function App() {
       alignItems: "center",
       cursor: "pointer"
     },
-    onClick: () => setOpenEntry(openEntry === e.id ? null : e.id)
+    onClick: () => setOpenEntry(openEntry === i ? null : i)
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 13.5
+      fontWeight: 500,
+      fontSize: 13
     }
-  }, e.desc), /*#__PURE__*/React.createElement("div", {
+  }, entry.date, " - ", entry.desc), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: C.mut
     }
-  }, e.date, " · ", e.ref)), /*#__PURE__*/React.createElement("span", {
-    style: {
-      transform: openEntry === e.id ? "rotate(90deg)" : "none",
-      transition: "transform .15s"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
+  }, entry.lines.length, " บรรทัด")), /*#__PURE__*/React.createElement(Icon, {
     name: "chev",
-    size: 16,
-    color: C.mut
-  }))), openEntry === e.id && /*#__PURE__*/React.createElement("div", {
+    size: 18,
+    color: C.mut,
     style: {
-      marginTop: 8,
-      background: "#FAF6EE",
-      borderRadius: 8,
-      padding: "8px 10px",
-      fontSize: 12.5
+      transform: openEntry === i ? "rotate(90deg)" : "rotate(0deg)",
+      transition: "transform 0.2s"
     }
-  }, e.lines.map((l, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
+  })), openEntry === i && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      paddingTop: 10,
+      borderTop: "1px solid #e8e0d0",
+      fontSize: 12
+    }
+  }, entry.lines.map((line, j) => /*#__PURE__*/React.createElement("div", {
+    key: j,
     style: {
       display: "flex",
       justifyContent: "space-between",
-      padding: "2px 0",
-      paddingLeft: l.credit > 0 ? 16 : 0
+      padding: "4px 0",
+      borderBottom: j < entry.lines.length - 1 ? "1px solid #f0ede5" : "none"
     }
-  }, /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("span", null, line.account, " [", line.dept, "]"), /*#__PURE__*/React.createElement("span", null, line.debit ? "Dr " + THB(line.debit) : "Cr " + THB(line.credit)))))))): /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      color: l.credit > 0 ? C.mut : C.ink
-    }
-  }, l.account, l.sub ? " · " + l.sub : ""), /*#__PURE__*/React.createElement("span", null, l.debit > 0 ? "Dr " + THB(l.debit) : "Cr " + THB(l.credit)))))))), accView === "cc" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500,
+      display: "flex",
+      gap: 8,
       marginBottom: 10
     }
-  }, "ต้นทุน/ค่าใช้จ่ายตามแผนก (cost center)"), cc.map(dp => {
-    const max = Math.max(...cc.map(x => x.total), 1);
-    return /*#__PURE__*/React.createElement("div", {
-      key: dp.id,
-      style: {
-        marginBottom: 12
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        fontSize: 14,
-        marginBottom: 4
-      }
-    }, /*#__PURE__*/React.createElement("span", null, dp.name), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 500
-      }
-    }, THB(dp.total))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        height: 8,
-        background: "#F0ECE2",
-        borderRadius: 6
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        height: 8,
-        width: dp.total / max * 100 + "%",
-        background: C.amber,
-        borderRadius: 6
-      }
-    })));
-  }), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(Btn, {
+    tone: accView === "journal" ? "amber" : "ghost",
+    onClick: () => setAccView("journal"),
     style: {
-      display: "flex",
-      justifyContent: "space-between",
-      borderTop: "1px solid " + C.line,
-      paddingTop: 10,
-      marginTop: 4,
-      fontWeight: 500
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "รวมค่าใช้จ่ายงวดนี้"), /*#__PURE__*/React.createElement("span", null, THB(monthExp)))), accView === "audit" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 500,
-      marginBottom: 8
-    }
-  }, "Audit trail (แทนลายเซ็นกระดาษ)"), world.auditLog.map((a, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      display: "flex",
-      gap: 10,
-      padding: "7px 0",
-      borderBottom: "1px solid #F2EEE3"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 8,
-      height: 8,
-      borderRadius: 8,
-      background: C.amber,
-      marginTop: 6,
-      flexShrink: 0
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("div", null, a.action), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: C.mut
-    }
-  }, a.t, " · ", a.who))))))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "sticky",
-      bottom: 0,
-      background: "#fff",
-      borderTop: "1px solid " + C.line,
-      display: "flex"
-    }
-  }, NAV.map(([id, ic, label]) => {
-    const active = tab === id;
-    const badge = id === "home" && pending.length + toReceive.length + toInvoice.length;
-    return /*#__PURE__*/React.createElement("button", {
-      key: id,
-      onClick: () => setTab(id),
-      style: {
-        flex: 1,
-        background: "none",
-        border: "none",
-        padding: "9px 0 11px",
-        cursor: "pointer",
-        color: active ? C.amber : C.mut,
-        position: "relative"
-      }
-    }, /*#__PURE__*/React.createElement(Icon, {
-      name: ic,
-      size: 21,
-      color: active ? C.amber : C.mut
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        marginTop: 2,
-        fontWeight: active ? 500 : 400
-      }
-    }, label), badge ? /*#__PURE__*/React.createElement("span", {
-      style: {
-        position: "absolute",
-        top: 5,
-        right: "50%",
-        marginRight: -22,
-        background: C.red,
-        color: "#fff",
-        fontSize: 10,
-        borderRadius: 8,
-        padding: "0 5px",
-        lineHeight: "15px"
-      }
-    }, badge) : null);
-  })));
-}
-function supName(w, id) {
-  const s = w.suppliers.find(x => x.id === id);
-  return s ? s.name : id;
-}
-function dName(w, id) {
-  const d = w.departments.find(x => x.id === id);
-  return d ? d.name : id;
-}
-function Shell({
-  children,
-  onGear,
-  busy
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.cream,
-      minHeight: "100vh",
-      color: C.ink,
-      maxWidth: 540,
-      margin: "0 auto",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "#26231d",
-      color: "#fff",
-      padding: "16px 18px 14px",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      letterSpacing: 1.5,
-      color: "#C9A86A"
-    }
-  }, "AMBER RESORT · KOH YAO NOI"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 19,
-      fontWeight: 500
-    }
-  }, "Central Store")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 12
-    }
-  }, busy && /*#__PURE__*/React.createElement("div", {
-    className: "spin",
-    style: {
-      width: 18,
-      height: 18,
-      borderWidth: 2
-    }
-  }), onGear && /*#__PURE__*/React.createElement("span", {
-    onClick: onGear,
-    style: {
-      cursor: "pointer",
-      opacity: .8
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "gear",
-    size: 20,
-    color: "#fff"
-  })))), children);
-}
-function Center({
-  children
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      minHeight: "70vh",
-      display: "flex",
-      alignItems: "center",
+      flex: 1,
       justifyContent: "center"
     }
-  }, children);
+  }, "Journal"), /*#__PURE__*/React.createElement(Btn, {
+    tone: accView === "cc" ? "amber" : "ghost",
+    onClick: () => setAccView("cc"),
+    style: {
+      flex: 1,
+      justifyContent: "center"
+    }
+  }, "Cost Center")), cc.map((d, i) => /*#__PURE__*/React.createElement(Card, {
+    key: i,
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      marginBottom: 4
+    }
+  }, d.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 600,
+      color: C.blue
+    }
+  }, THB(d.total))))))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      display: "flex",
+      background: "#fff",
+      borderTop: "1px solid " + C.line,
+      zIndex: 10
+    }
+  }, NAV.map((n, i) => /*#__PURE__*/React.createElement("button", {
+    key: n[0],
+    onClick: () => {
+      setTab(n[0]);
+      setCountSearch("");
+      setCountFilter("all");
+    },
+    style: {
+      flex: 1,
+      border: "none",
+      background: tab === n[0] ? C.amberSoft : "transparent",
+      color: tab === n[0] ? C.amber : C.mut,
+      padding: "10px 2px",
+      fontSize: 11,
+      fontWeight: 500,
+      cursor: "pointer",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: n[1],
+    size: 20,
+    color: "currentColor"
+  }), n[2]))));
 }
-ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
-} catch (err) {
-  window.__showErr((err && err.message ? err.message : err) + '\n' + (err && err.stack ? err.stack : ''));
+ReactDOM.render(/*#__PURE__*/React.createElement(App, null), document.getElementById("root"));
+} catch (e) {
+  window.__showErr(e.message + "\n" + e.stack);
 }
 </script>
 </body>
